@@ -1,0 +1,18 @@
+# Ignore build and compilation outputs
+dist/
+build/
+coverage/
+
+# Ignore dependency directories (Prettier ignores node_modules by default)
+node_modules/
+
+# Ignore specific file types across the entire project
+*.html
+*.min.js
+*.json
+
+# Ignore a specific file in a specific folder
+src/generated/api.ts
+
+# Ignore a file anywhere in the project
+secret.js
