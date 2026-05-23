@@ -1,4 +1,4 @@
-import express, { urlencoded } from "express";
+import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
@@ -17,5 +17,15 @@ app.use(cookieParser());
 
 import userRouter from "./routes/user.routes.js";
 app.use("/api/v1", userRouter);
+
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    success: false,
+    statusCode,
+    message: err.message || "Internal Server Error",
+    errors: err.errors || [],
+  });
+});
 
 export default app;
