@@ -19,6 +19,8 @@ import userRouter from "./routes/user.routes.js";
 app.use("/api/v1", userRouter);
 
 app.use((err, req, res, next) => {
+  console.error("[ERROR]", err.message);
+  console.error(err.stack);
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
     success: false,

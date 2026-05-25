@@ -1,20 +1,33 @@
+import { z } from "zod";
+import fs from "fs";
 import { ApiError } from "../utils/ApiError.js";
 
-const validate = (schema) => async (req, res, next) => {
-  try {
-    // Parse the request body against the provided Zod schema
-    const parseBody = await schema.parseAsync(req.body);
-
-    // Replace req.body with the sanitized/parsed data from Zod
-    req.body = parseBody;
-    next();
-  } catch (err) {
-    // If Zod fails, extract the error messages
-    const errorMessages = err.errors.map((e) => e.message).join(", ");
-
-    // Pass the error to your global error handler
-    next(new ApiError(400, `Validation Failed: ${errorMessages}`));
+const cleanupRequestFiles = (req) => {
+  if (req.files) {
+    Object.values(req.files)
+      .flat()
+      .forEach((file) => {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      });
   }
+};
+
+const validate = (schema) => (req, res, next) => {
+  schema
+    .parseAsync(req.body)
+    .then((parseBody) => {
+      req.body = parseBody;
+      next();
+    })
+    .catch((err) => {
+      cleanupRequestFiles(req);
+      if (err instanceof z.ZodError) {
+        const errorMessages = err.issues.map((e) => e.message).join(", ");
+        next(new ApiError(400, `Validation Failed: ${errorMessages}`));
+      } else {
+        next(err);
+      }
+    });
 };
 
 export const validateMiddleware = validate;
