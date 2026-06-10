@@ -60,6 +60,7 @@ const toggleSubscription = asyncHandler(async (req, res) => {
 
 const getUserChannelSubscribers = asyncHandler(async (req, res) => {
   const { channelId } = req.params;
+  const { page = 1, limit = 10 } = req.query;
 
   if (!isValidObjectId(channelId)) {
     throw new ApiError(400, "Invalid channel id");
@@ -70,8 +71,9 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Channel not found");
   }
 
-  const subscribers = await Subscription.aggregate([
+  const pipeline = [
     { $match: { channel: new mongoose.Types.ObjectId(channelId) } },
+    { $sort: { createdAt: -1 } },
     {
       $lookup: {
         from: "users",
@@ -89,21 +91,26 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
         subscribedAt: "$createdAt",
       },
     },
-  ]);
+  ];
+
+  const options = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  const result = await Subscription.aggregatePaginate(
+    Subscription.aggregate(pipeline),
+    options,
+  );
 
   return res
     .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { subscribers, totalSubscribers: subscribers.length },
-        "Subscribers fetched successfully",
-      ),
-    );
+    .json(new ApiResponse(200, result, "Subscribers fetched successfully"));
 });
 
 const getSubscribedChannels = asyncHandler(async (req, res) => {
   const { subscriberId } = req.params;
+  const { page = 1, limit = 10 } = req.query;
 
   if (!isValidObjectId(subscriberId)) {
     throw new ApiError(400, "Invalid user id");
@@ -114,8 +121,9 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
 
-  const channels = await Subscription.aggregate([
+  const pipeline = [
     { $match: { subscriber: new mongoose.Types.ObjectId(subscriberId) } },
+    { $sort: { createdAt: -1 } },
     {
       $lookup: {
         from: "users",
@@ -133,16 +141,22 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
         subscribedAt: "$createdAt",
       },
     },
-  ]);
+  ];
+
+  const options = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  const result = await Subscription.aggregatePaginate(
+    Subscription.aggregate(pipeline),
+    options,
+  );
 
   return res
     .status(200)
     .json(
-      new ApiResponse(
-        200,
-        { channels, totalChannels: channels.length },
-        "Subscribed channels fetched successfully",
-      ),
+      new ApiResponse(200, result, "Subscribed channels fetched successfully"),
     );
 });
 

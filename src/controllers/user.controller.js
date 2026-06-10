@@ -8,6 +8,11 @@ import {
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { logger } from "../utils/logger.js";
 import { cleanupRequestFiles } from "../utils/fileCleanup.js";
+import {
+  getAccessTokenCookieOptions,
+  getRefreshTokenCookieOptions,
+  getClearCookieOptions,
+} from "../utils/cookieOptions.js";
 import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -63,19 +68,24 @@ const registerUser = asyncHandler(async (req, res) => {
   try {
     user = await User.create({
       fullname,
-      avatar: avatar.url,
-      coverImage: coverImage?.url || "",
+      avatar: { url: avatar.url, public_id: avatar.public_id },
+      coverImage: coverImage
+        ? { url: coverImage.url, public_id: coverImage.public_id }
+        : undefined,
       email,
       password,
       username,
     });
-  } catch {
+  } catch (error) {
     await Promise.all([
       deleteFromCloudinary(avatar.public_id),
       coverImage?.public_id
         ? deleteFromCloudinary(coverImage.public_id)
         : Promise.resolve(),
     ]);
+    if (error.code === 11000) {
+      throw new ApiError(409, "Email or username already in use");
+    }
     throw new ApiError(500, "User creation failed");
   }
 
@@ -136,21 +146,10 @@ const loginUser = asyncHandler(async (req, res) => {
     userAgent: req.headers["user-agent"],
   });
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-  };
   return res
     .status(200)
-    .cookie("accessToken", accessToken, {
-      ...options,
-      maxAge: 15 * 60 * 1000,
-    })
-    .cookie("refreshToken", refreshToken, {
-      ...options,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
+    .cookie("accessToken", accessToken, getAccessTokenCookieOptions())
+    .cookie("refreshToken", refreshToken, getRefreshTokenCookieOptions())
     .json(
       new ApiResponse(
         200,
@@ -177,11 +176,7 @@ const logoutUser = asyncHandler(async (req, res) => {
     },
   );
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-  };
+  const options = getClearCookieOptions();
 
   return res
     .status(200)
@@ -192,56 +187,45 @@ const logoutUser = asyncHandler(async (req, res) => {
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
   const incommingRefreshToken =
-    req.cookies.refreshToken || req.body.refreshToken;
+    req.cookies.refreshToken || req.body?.refreshToken;
 
   if (!incommingRefreshToken) {
     throw new ApiError(401, "Unauthorized Request");
   }
 
+  let decodedToken;
   try {
-    const decodedToken = jwt.verify(
+    decodedToken = jwt.verify(
       incommingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET,
     );
-
-    const user = await User.findById(decodedToken?._id);
-    if (!user) {
-      throw new ApiError(401, "Invalid Refresh Token");
-    }
-
-    if (incommingRefreshToken !== user?.refreshToken) {
-      throw new ApiError(401, "Refresh Token is expired or used");
-    }
-
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-    };
-
-    const { accessToken, refreshToken: newRefreshToken } =
-      await generateAccessAndRefreshTokens(user._id);
-
-    return res
-      .status(200)
-      .cookie("accessToken", accessToken, {
-        ...options,
-        maxAge: 15 * 60 * 1000,
-      })
-      .cookie("refreshToken", newRefreshToken, {
-        ...options,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
-      .json(
-        new ApiResponse(
-          200,
-          { accessToken, refreshToken: newRefreshToken },
-          "Access token Refreshed",
-        ),
-      );
-  } catch (error) {
-    throw new ApiError(401, error?.message || "Invalid refresh token");
+  } catch {
+    throw new ApiError(401, "Invalid or expired refresh token");
   }
+
+  const user = await User.findById(decodedToken?._id);
+  if (!user) {
+    throw new ApiError(401, "Invalid Refresh Token");
+  }
+
+  if (incommingRefreshToken !== user?.refreshToken) {
+    throw new ApiError(401, "Refresh Token is expired or used");
+  }
+
+  const { accessToken, refreshToken: newRefreshToken } =
+    await generateAccessAndRefreshTokens(user._id);
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, getAccessTokenCookieOptions())
+    .cookie("refreshToken", newRefreshToken, getRefreshTokenCookieOptions())
+    .json(
+      new ApiResponse(
+        200,
+        { accessToken, refreshToken: newRefreshToken },
+        "Access token Refreshed",
+      ),
+    );
 });
 
 const changeCurrentPassword = asyncHandler(async (req, res) => {
@@ -263,9 +247,12 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
   }
 
   user.password = newPassword;
+  user.refreshToken = undefined;
   await user.save({ validateBeforeSave: false });
+
   return res
     .status(200)
+    .clearCookie("refreshToken", getClearCookieOptions())
     .json(new ApiResponse(200, {}, "Password changed successfully"));
 });
 
@@ -282,16 +269,24 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All fields are required");
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.user?._id,
-    {
-      $set: {
-        fullname,
-        email,
+  let user;
+  try {
+    user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+        $set: {
+          fullname,
+          email,
+        },
       },
-    },
-    { new: true },
-  ).select("-password");
+      { new: true },
+    ).select("-password");
+  } catch (error) {
+    if (error.code === 11000) {
+      throw new ApiError(409, "Email already in use");
+    }
+    throw error;
+  }
 
   return res
     .status(200)
@@ -311,15 +306,27 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Error while uploading avatar");
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.user?._id,
-    {
-      $set: {
-        avatar: avatar.url,
+  const oldAvatarPublicId = req.user.avatar?.public_id;
+
+  let user;
+  try {
+    user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+        $set: {
+          avatar: { url: avatar.url, public_id: avatar.public_id },
+        },
       },
-    },
-    { new: true },
-  ).select("-password");
+      { new: true },
+    ).select("-password");
+  } catch (error) {
+    await deleteFromCloudinary(avatar.public_id);
+    throw error;
+  }
+
+  if (oldAvatarPublicId) {
+    await deleteFromCloudinary(oldAvatarPublicId);
+  }
 
   return res
     .status(200)
@@ -339,15 +346,27 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Error while uploading cover image");
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.user?._id,
-    {
-      $set: {
-        coverImage: coverImage.url,
+  const oldCoverImagePublicId = req.user.coverImage?.public_id;
+
+  let user;
+  try {
+    user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+        $set: {
+          coverImage: { url: coverImage.url, public_id: coverImage.public_id },
+        },
       },
-    },
-    { new: true },
-  ).select("-password");
+      { new: true },
+    ).select("-password");
+  } catch (error) {
+    await deleteFromCloudinary(coverImage.public_id);
+    throw error;
+  }
+
+  if (oldCoverImagePublicId) {
+    await deleteFromCloudinary(oldCoverImagePublicId);
+  }
 
   return res
     .status(200)
@@ -359,6 +378,8 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   if (!username?.trim()) {
     throw new ApiError(400, "Username is missing");
   }
+
+  const requesterId = req.user?._id ?? null;
 
   const channel = await User.aggregate([
     {
@@ -392,7 +413,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         },
         isSubscribed: {
           $cond: {
-            if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+            if: { $in: [requesterId, "$subscribers.subscriber"] },
             then: true,
             else: false,
           },
@@ -408,13 +429,17 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         isSubscribed: 1,
         avatar: 1,
         coverImage: 1,
-        email: 1,
         createdAt: 1,
       },
     },
   ]);
   if (!channel?.length) {
     throw new ApiError(404, "channel does not exist");
+  }
+
+  // Email is private; only expose it to the channel owner viewing their own profile.
+  if (requesterId && String(channel[0]._id) === String(requesterId)) {
+    channel[0].email = req.user.email;
   }
 
   return res

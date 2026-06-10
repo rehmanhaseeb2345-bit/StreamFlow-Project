@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import multer from "multer";
 import userRouter from "./routes/user.routes.js";
 import videoRouter from "./routes/video.routes.js";
 import subscriptionRouter from "./routes/subscription.routes.js";
@@ -43,6 +44,16 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("[ERROR]", err.message);
   console.error(err.stack);
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      success: false,
+      statusCode: 400,
+      message: err.message,
+      errors: [],
+    });
+  }
+
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
     success: false,

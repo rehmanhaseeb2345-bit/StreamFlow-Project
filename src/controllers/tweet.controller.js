@@ -1,6 +1,7 @@
-import { isValidObjectId } from "mongoose";
+import mongoose, { isValidObjectId } from "mongoose";
 import { Tweet } from "../models/tweet.model.js";
 import { User } from "../models/user.model.js";
+import { Like } from "../models/like.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -20,6 +21,7 @@ const createTweet = asyncHandler(async (req, res) => {
 
 const getUserTweets = asyncHandler(async (req, res) => {
   const { userId } = req.params;
+  const { page = 1, limit = 10 } = req.query;
 
   if (!isValidObjectId(userId)) {
     throw new ApiError(400, "Invalid user id");
@@ -30,13 +32,34 @@ const getUserTweets = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
 
-  const tweets = await Tweet.find({ owner: userId })
-    .sort({ createdAt: -1 })
-    .populate("owner", "username fullname avatar");
+  const pipeline = [
+    { $match: { owner: new mongoose.Types.ObjectId(userId) } },
+    { $sort: { createdAt: -1 } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+        pipeline: [{ $project: { username: 1, fullname: 1, avatar: 1 } }],
+      },
+    },
+    { $unwind: "$owner" },
+  ];
+
+  const options = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  const result = await Tweet.aggregatePaginate(
+    Tweet.aggregate(pipeline),
+    options,
+  );
 
   return res
     .status(200)
-    .json(new ApiResponse(200, tweets, "Tweets fetched successfully"));
+    .json(new ApiResponse(200, result, "Tweets fetched successfully"));
 });
 
 const updateTweet = asyncHandler(async (req, res) => {
@@ -80,7 +103,10 @@ const deleteTweet = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not authorized to delete this tweet");
   }
 
-  await tweet.deleteOne();
+  await Promise.all([
+    tweet.deleteOne(),
+    Like.deleteMany({ tweet: tweetId }),
+  ]);
 
   return res
     .status(200)

@@ -5,7 +5,7 @@ import {
   updateComment,
   deleteComment,
 } from "../controllers/comment.controller.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { verifyJWT, verifyJWTOptional } from "../middlewares/auth.middleware.js";
 import { validateMiddleware } from "../middlewares/validate.middleware.js";
 import {
   addCommentSchema,
@@ -14,7 +14,7 @@ import {
 
 const router = Router();
 
-router.get("/:videoId", getVideoComments);
+router.get("/:videoId", verifyJWTOptional, getVideoComments);
 
 router.post(
   "/:videoId",

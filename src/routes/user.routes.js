@@ -11,7 +11,10 @@ import {
   updateUserCoverImage,
   getUserChannelProfile,
 } from "../controllers/user.controller.js";
-import { upload } from "../middlewares/multure.middleware.js";
+import {
+  uploadImage,
+  verifyFileSignatures,
+} from "../middlewares/multer.middleware.js";
 import { validateMiddleware } from "../middlewares/validate.middleware.js";
 import {
   registerUserSchema,
@@ -19,17 +22,18 @@ import {
   changeCurrentPasswordSchema,
   updateAccountDetailsSchema,
 } from "../validators/user.validator.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { verifyJWT, verifyJWTOptional } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 // Public routes
 router.post(
   "/register",
-  upload.fields([
+  uploadImage.fields([
     { name: "avatar", maxCount: 1 },
     { name: "coverImage", maxCount: 1 },
   ]),
+  verifyFileSignatures,
   validateMiddleware(registerUserSchema),
   registerUser,
 );
@@ -60,17 +64,19 @@ router.patch(
 router.patch(
   "/avatar",
   verifyJWT,
-  upload.single("avatar"),
+  uploadImage.single("avatar"),
+  verifyFileSignatures,
   updateUserAvatar,
 );
 
 router.patch(
   "/cover-image",
   verifyJWT,
-  upload.single("coverImage"),
+  uploadImage.single("coverImage"),
+  verifyFileSignatures,
   updateUserCoverImage,
 );
 
-router.get("/channel/:username", verifyJWT, getUserChannelProfile);
+router.get("/channel/:username", verifyJWTOptional, getUserChannelProfile);
 
 export default router;

@@ -8,7 +8,7 @@ import {
   updatePlaylist,
   deletePlaylist,
 } from "../controllers/playlist.controller.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { verifyJWT, verifyJWTOptional } from "../middlewares/auth.middleware.js";
 import { validateMiddleware } from "../middlewares/validate.middleware.js";
 import {
   createPlaylistSchema,
@@ -26,7 +26,7 @@ router.post(
   createPlaylist,
 );
 
-router.get("/:playlistId", verifyJWT, getPlaylistById);
+router.get("/:playlistId", verifyJWTOptional, getPlaylistById);
 
 router.patch(
   "/:playlistId",

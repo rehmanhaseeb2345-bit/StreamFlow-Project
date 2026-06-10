@@ -7,8 +7,12 @@ import {
   deleteVideo,
   togglePublishStatus,
 } from "../controllers/video.controller.js";
-import { upload } from "../middlewares/multure.middleware.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+import {
+  upload,
+  uploadImage,
+  verifyFileSignatures,
+} from "../middlewares/multer.middleware.js";
+import { verifyJWT, verifyJWTOptional } from "../middlewares/auth.middleware.js";
 import { validateMiddleware } from "../middlewares/validate.middleware.js";
 import {
   publishVideoSchema,
@@ -26,16 +30,18 @@ router.post(
     { name: "videoFile", maxCount: 1 },
     { name: "thumbnail", maxCount: 1 },
   ]),
+  verifyFileSignatures,
   validateMiddleware(publishVideoSchema),
   publishAVideo,
 );
 
-router.get("/:videoId", verifyJWT, getVideoById);
+router.get("/:videoId", verifyJWTOptional, getVideoById);
 
 router.patch(
   "/:videoId",
   verifyJWT,
-  upload.single("thumbnail"),
+  uploadImage.single("thumbnail"),
+  verifyFileSignatures,
   validateMiddleware(updateVideoSchema),
   updateVideo,
 );

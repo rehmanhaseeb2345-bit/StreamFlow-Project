@@ -1,4 +1,4 @@
-import { isValidObjectId } from "mongoose";
+import mongoose, { isValidObjectId } from "mongoose";
 import { Like } from "../models/like.model.js";
 import { Video } from "../models/video.model.js";
 import { Comment } from "../models/comment.model.js";
@@ -14,8 +14,13 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid video id");
   }
 
-  const video = await Video.findById(videoId).select("_id");
+  const video = await Video.findById(videoId).select("_id owner isPublished");
   if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  const isOwner = String(video.owner) === String(req.user._id);
+  if (!video.isPublished && !isOwner) {
     throw new ApiError(404, "Video not found");
   }
 
@@ -54,8 +59,20 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid comment id");
   }
 
-  const comment = await Comment.findById(commentId).select("_id");
+  const comment = await Comment.findById(commentId).select("_id video");
   if (!comment) {
+    throw new ApiError(404, "Comment not found");
+  }
+
+  const video = await Video.findById(comment.video).select(
+    "_id owner isPublished",
+  );
+  if (!video) {
+    throw new ApiError(404, "Comment not found");
+  }
+
+  const isOwner = String(video.owner) === String(req.user._id);
+  if (!video.isPublished && !isOwner) {
     throw new ApiError(404, "Comment not found");
   }
 
@@ -132,7 +149,9 @@ const toggleTweetLike = asyncHandler(async (req, res) => {
 });
 
 const getLikedVideos = asyncHandler(async (req, res) => {
-  const likedVideos = await Like.aggregate([
+  const { page = 1, limit = 10 } = req.query;
+
+  const pipeline = [
     { $match: { likedBy: req.user._id, video: { $exists: true } } },
     { $sort: { createdAt: -1 } },
     {
@@ -160,13 +179,18 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     { $unwind: "$video" },
     { $match: { "video.isPublished": true } },
     { $replaceRoot: { newRoot: "$video" } },
-  ]);
+  ];
+
+  const options = {
+    page: Math.max(1, parseInt(page, 10) || 1),
+    limit: Math.min(50, Math.max(1, parseInt(limit, 10) || 10)),
+  };
+
+  const result = await Like.aggregatePaginate(Like.aggregate(pipeline), options);
 
   return res
     .status(200)
-    .json(
-      new ApiResponse(200, likedVideos, "Liked videos fetched successfully"),
-    );
+    .json(new ApiResponse(200, result, "Liked videos fetched successfully"));
 });
 
 export { toggleVideoLike, toggleCommentLike, toggleTweetLike, getLikedVideos };

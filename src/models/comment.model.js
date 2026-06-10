@@ -24,6 +24,8 @@ const commentSchema = new Schema(
   },
 );
 
+commentSchema.index({ video: 1, createdAt: -1 });
+
 commentSchema.plugin(mongooseAggregatePaginate);
 
 export const Comment = mongoose.model("Comment", commentSchema);

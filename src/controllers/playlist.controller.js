@@ -72,11 +72,17 @@ const getPlaylistById = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Playlist not found");
   }
 
-  const isOwner = String(playlist.owner._id) === String(req.user._id);
+  const isOwner =
+    !!req.user &&
+    !!playlist.owner &&
+    String(playlist.owner._id) === String(req.user._id);
 
-  if (!isOwner) {
-    playlist.videos = playlist.videos.filter((video) => video.isPublished);
-  }
+  // Drop entries for videos that no longer exist (dangling references), and
+  // hide unpublished videos from anyone but the playlist owner.
+  playlist.videos = playlist.videos.filter((video) => {
+    if (!video) return false;
+    return isOwner || video.isPublished;
+  });
 
   return res
     .status(200)
@@ -99,8 +105,13 @@ const addVideoToPlaylist = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not authorized to modify this playlist");
   }
 
-  const video = await Video.findById(videoId).select("_id");
+  const video = await Video.findById(videoId).select("_id owner isPublished");
   if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  const isVideoOwner = String(video.owner) === String(req.user._id);
+  if (!video.isPublished && !isVideoOwner) {
     throw new ApiError(404, "Video not found");
   }
 

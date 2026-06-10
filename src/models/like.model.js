@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
 
 const likeSchema = new Schema(
   {
@@ -35,5 +36,8 @@ likeSchema.index(
   { tweet: 1, likedBy: 1 },
   { unique: true, partialFilterExpression: { tweet: { $exists: true } } },
 );
+likeSchema.index({ likedBy: 1, createdAt: -1 });
+
+likeSchema.plugin(mongooseAggregatePaginate);
 
 export const Like = mongoose.model("Like", likeSchema);

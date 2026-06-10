@@ -4,9 +4,12 @@ import fs from "fs";
 import app from "./src/app.js";
 import connectToDB from "./src/db/db.js";
 
+// Some local/network DNS resolvers fail to resolve the MongoDB Atlas SRV
+// record, which breaks the initial DB connection. Force public resolvers
+// (Google, Cloudflare) so SRV lookups succeed regardless of host DNS config.
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
-fs.mkdirSync("./public/temp", { recursive: true });
+fs.mkdirSync("./temp/uploads", { recursive: true });
 
 const REQUIRED_ENV = [
   "MONGODB_URI",

@@ -29,3 +29,31 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, error?.message || "Invalid access token");
   }
 });
+
+// Identifies the user if a valid token is present, but never blocks the
+// request. Used for routes that are public but behave differently for
+// authenticated users (e.g. owners seeing their own unpublished content).
+export const verifyJWTOptional = asyncHandler(async (req, res, next) => {
+  const token =
+    req.cookies?.accessToken ||
+    req.header("Authorization")?.replace("Bearer ", "");
+
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    const user = await User.findById(decodedToken?._id).select(
+      "-password -refreshToken",
+    );
+
+    if (user) {
+      req.user = user;
+    }
+  } catch {
+    // Invalid/expired token on an optional-auth route: proceed as anonymous.
+  }
+
+  next();
+});

@@ -1,6 +1,9 @@
 import mongoose, { isValidObjectId } from "mongoose";
 import { Video } from "../models/video.model.js";
 import { User } from "../models/user.model.js";
+import { Comment } from "../models/comment.model.js";
+import { Like } from "../models/like.model.js";
+import { Playlist } from "../models/playlist.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -146,18 +149,26 @@ const getVideoById = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Video not found");
   }
 
-  const isOwner = String(video.owner._id) === String(req.user._id);
+  const isOwner =
+    !!req.user &&
+    !!video.owner &&
+    String(video.owner._id) === String(req.user._id);
 
   if (!video.isPublished && !isOwner) {
     throw new ApiError(404, "Video not found");
   }
 
-  await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } });
-  await User.findByIdAndUpdate(req.user._id, {
-    $addToSet: { watchHistory: videoId },
-  });
+  if (!isOwner) {
+    await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } });
 
-  video.views += 1;
+    if (req.user) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $addToSet: { watchHistory: videoId },
+      });
+    }
+
+    video.views += 1;
+  }
 
   return res
     .status(200)
@@ -231,12 +242,28 @@ const deleteVideo = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not authorized to delete this video");
   }
 
+  const commentIds = await Comment.find({ video: videoId }).distinct("_id");
+
   await Promise.all([
     deleteFromCloudinary(video.videoFile.public_id, "video"),
     deleteFromCloudinary(video.thumbnail.public_id),
   ]);
 
-  await video.deleteOne();
+  await Promise.all([
+    video.deleteOne(),
+    Comment.deleteMany({ video: videoId }),
+    Like.deleteMany({
+      $or: [{ video: videoId }, { comment: { $in: commentIds } }],
+    }),
+    Playlist.updateMany(
+      { videos: videoId },
+      { $pull: { videos: videoId } },
+    ),
+    User.updateMany(
+      { watchHistory: videoId },
+      { $pull: { watchHistory: videoId } },
+    ),
+  ]);
 
   return res
     .status(200)
