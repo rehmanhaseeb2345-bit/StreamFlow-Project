@@ -3,6 +3,8 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import multer from "multer";
+import mongoose from "mongoose";
+import { ApiResponse } from "./utils/ApiResponse.js";
 import userRouter from "./routes/user.routes.js";
 import videoRouter from "./routes/video.routes.js";
 import subscriptionRouter from "./routes/subscription.routes.js";
@@ -32,6 +34,15 @@ app.use(
 );
 app.use(express.static("public"));
 app.use(cookieParser());
+
+app.get("/api/v1/healthcheck", (req, res) => {
+  const dbState = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+  const statusCode = dbState === "connected" ? 200 : 503;
+
+  res
+    .status(statusCode)
+    .json(new ApiResponse(statusCode, { db: dbState }, "OK"));
+});
 
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/videos", videoRouter);
