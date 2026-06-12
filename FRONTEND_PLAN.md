@@ -129,7 +129,7 @@ Still intentionally missing (build UI without them):
 | GET `/subscriptions/c/:channelId` | — | Channel's subscribers, paginated |
 | GET `/subscriptions/u/:subscriberId` | — | Channels a user follows, paginated |
 | POST `/playlists` | ✅ | `{ name, description? }`. 201 |
-| GET `/playlists/user/:userId` | — | Paginated, includes `videoCount` |
+| GET `/playlists/user/:userId` | — | Paginated, includes `videoCount`; optional `?videoId=` adds a `hasVideo` membership flag per playlist |
 | GET `/playlists/:playlistId` | optional | Videos populated; unpublished hidden from non-owners |
 | PATCH `/playlists/:playlistId` | ✅ owner | `{ name?, description? }` |
 | DELETE `/playlists/:playlistId` | ✅ owner | |

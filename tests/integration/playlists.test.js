@@ -62,6 +62,58 @@ describe("GET /api/v1/playlists/user/:userId", () => {
     expect(res.body.data.docs.length).toBe(1);
     expect(res.body.data.docs[0].videoCount).toBe(0);
   });
+
+  it("omits hasVideo when no videoId is given", async () => {
+    const { cookies, user } = await registerAndLogin();
+
+    await request(app)
+      .post("/api/v1/playlists")
+      .set("Cookie", cookies)
+      .send({ name: "Watch Later" });
+
+    const res = await request(app).get(`/api/v1/playlists/user/${user._id}`);
+
+    expect(res.body.data.docs[0]).not.toHaveProperty("hasVideo");
+  });
+
+  it("returns 400 for an invalid videoId query param", async () => {
+    const { user } = await registerAndLogin();
+
+    const res = await request(app).get(
+      `/api/v1/playlists/user/${user._id}?videoId=not-an-id`,
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("flags playlist membership via hasVideo when videoId is given", async () => {
+    const { cookies, user } = await registerAndLogin();
+    const videoId = (await publishVideo(cookies)).body.data._id;
+
+    const withVideo = await request(app)
+      .post("/api/v1/playlists")
+      .set("Cookie", cookies)
+      .send({ name: "Has It" });
+    const withoutVideo = await request(app)
+      .post("/api/v1/playlists")
+      .set("Cookie", cookies)
+      .send({ name: "Does Not" });
+
+    await request(app)
+      .patch(`/api/v1/playlists/${withVideo.body.data._id}/videos/${videoId}`)
+      .set("Cookie", cookies);
+
+    const res = await request(app).get(
+      `/api/v1/playlists/user/${user._id}?videoId=${videoId}`,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const byName = Object.fromEntries(
+      res.body.data.docs.map((p) => [p.name, p.hasVideo]),
+    );
+    expect(byName["Has It"]).toBe(true);
+    expect(byName["Does Not"]).toBe(false);
+  });
 });
 
 describe("GET /api/v1/playlists/:playlistId", () => {

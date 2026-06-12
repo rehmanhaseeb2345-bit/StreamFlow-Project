@@ -24,6 +24,7 @@ const createPlaylist = asyncHandler(async (req, res) => {
 
 const getUserPlaylists = asyncHandler(async (req, res) => {
   const { userId } = req.params;
+  const { videoId } = req.query;
 
   if (!isValidObjectId(userId)) {
     throw new ApiError(400, "Invalid user id");
@@ -34,14 +35,28 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
 
+  // Optional ?videoId= adds a hasVideo flag per playlist so clients can
+  // render checked/unchecked membership (e.g. a save-to-playlist dialog)
+  // without fetching every playlist's full video list.
+  const addFields = { videoCount: { $size: "$videos" } };
+  if (videoId !== undefined) {
+    if (!isValidObjectId(videoId)) {
+      throw new ApiError(400, "Invalid video id");
+    }
+    addFields.hasVideo = {
+      $in: [new mongoose.Types.ObjectId(videoId), "$videos"],
+    };
+  }
+
   const pipeline = [
     { $match: { owner: new mongoose.Types.ObjectId(userId) } },
-    { $addFields: { videoCount: { $size: "$videos" } } },
+    { $addFields: addFields },
     {
       $project: {
         name: 1,
         description: 1,
         videoCount: 1,
+        hasVideo: 1,
         owner: 1,
         createdAt: 1,
         updatedAt: 1,
